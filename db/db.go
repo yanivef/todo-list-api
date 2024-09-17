@@ -51,13 +51,14 @@ func TaskExists(id int) (bool, error) {
 
 func InsertTask(task task.Task) error {
 	var err error
-	id, name, done, created_at, updated_at := task.ID, task.Name, task.Done, task.CreatedAt, task.UpdatedAt
+	id, name, done := task.ID, task.Name, task.Done
 
-	query := `INSERT INTO tasks (id,name,done,created_at,updated_at) VALUES($1, $2, $3, $4, $5)`
+	query := `INSERT INTO tasks (id, name, done) VALUES($1, $2, $3)`
 
-	_, err = DB.Exec(query, id, name, done, created_at, updated_at)
+	_, err = DB.Exec(query, id, name, done)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error inserting task: %s", err)
+		return err
 	} else {
 		log.Printf("New task inserted to the DB, task details: %v", task)
 	}
