@@ -1,6 +1,8 @@
 package db
 
 import (
+	task "task-manager-api/models"
+
 	"database/sql"
 	"fmt"
 	"log"
@@ -38,4 +40,27 @@ func Close() error {
 		return DB.Close() // returns error if couldn't close DB connection
 	}
 	return nil // no need to close, DB is nil
+}
+
+func TaskExists(id int) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM tasks WHERE id=$1)` // $1 is a placeholder
+	err := DB.QueryRow(query, id).Scan(&exists)
+	return exists, err
+}
+
+func InsertTask(task task.Task) error {
+	var err error
+	id, name, done, created_at, updated_at := task.ID, task.Name, task.Done, task.CreatedAt, task.UpdatedAt
+
+	query := `INSERT INTO tasks (id,name,done,created_at,updated_at) VALUES($1, $2, $3, $4, $5)`
+
+	_, err = DB.Exec(query, id, name, done, created_at, updated_at)
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		log.Printf("New task inserted to the DB, task details: %v", task)
+	}
+
+	return nil
 }

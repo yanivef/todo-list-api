@@ -2,7 +2,10 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"task-manager-api/db"
+	"task-manager-api/handlers"
+	_ "task-manager-api/handlers"
 
 	"github.com/joho/godotenv"
 )
@@ -22,4 +25,9 @@ func main() {
 			log.Printf("Error closing database %s", err)
 		}
 	}()
+
+	http.HandleFunc("/tasks", handlers.CreateTask)
+	//http.HandleFunc("/tasks", handlers.GetTask)
+
+	log.Fatal(http.ListenAndServe(":5000", nil))
 }
