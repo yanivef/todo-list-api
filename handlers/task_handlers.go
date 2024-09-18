@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+func HandelTasks(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		GetTasks(w, r)
+	case http.MethodPost:
+		CreateTask(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // POST
 func CreateTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -103,8 +114,26 @@ func GetTask(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func GetAllTasks(w http.ResponseWriter, r *http.Request) {
+func GetTasks(w http.ResponseWriter, r *http.Request) {
+	// GET REQUEST -> return list of all tasks from database
+	if r.Method != http.MethodGet {
+		http.Error(w, "Only GET method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	tasks, err := db.GetAllTasks()
+	if err != nil {
+		http.Error(w, "Couldn't fetch tasks from database", http.StatusInternalServerError)
+		return
+	}
+	out, err := json.Marshal(tasks)
+	if err != nil {
+		http.Error(w, "Couldn't parse tasks", http.StatusInternalServerError)
+		return
+	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(out)
+	w.WriteHeader(http.StatusOK)
 }
 
 // DELETE

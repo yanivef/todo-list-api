@@ -26,8 +26,7 @@ func main() {
 		}
 	}()
 
-	http.HandleFunc("/tasks", handlers.CreateTask)
-	//http.HandleFunc("/tasks", handlers.GetTask)
+	http.HandleFunc("/tasks", handlers.HandelTasks)
 
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }
