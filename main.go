@@ -7,6 +7,7 @@ import (
 	"task-manager-api/handlers"
 	_ "task-manager-api/handlers"
 
+	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 )
 
@@ -26,7 +27,10 @@ func main() {
 		}
 	}()
 
-	http.HandleFunc("/tasks", handlers.HandelTasks)
+	r := mux.NewRouter()
 
-	log.Fatal(http.ListenAndServe(":5000", nil))
+	r.HandleFunc("/tasks", handlers.HandelTasks).Methods("GET", "POST")
+	// http.HandleFunc("/tasks", handlers.HandelTasks)
+	r.HandleFunc("/tasks/{id:[0-9]+}", handlers.HandleTaskByID).Methods("GET", "DELETE", "PUT")
+	log.Fatal(http.ListenAndServe(":5000", r))
 }

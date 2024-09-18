@@ -91,3 +91,69 @@ func GetAllTasks() ([]task.Task, error) {
 	}
 	return tasks, nil
 }
+
+// get task from database by given ID
+func GetTask(id int) (task.Task, error) {
+	var err error
+	var task task.Task
+	query := `SELECT id, name, done, created_at, updated_at FROM tasks WHERE id = $1`
+
+	row := DB.QueryRow(query, id)
+
+	err = row.Scan(&task.ID, &task.Name, &task.Done, &task.CreatedAt, &task.UpdatedAt)
+	if err != nil {
+		// check if the error suggests that no row was found with the given ID
+		if err == sql.ErrNoRows {
+			return task, fmt.Errorf("task with ID %d was not found", id)
+		}
+		return task, err
+	}
+
+	return task, nil
+
+}
+
+func DeleteTask(id int) error {
+	var err error
+	exists, err := TaskExists(id)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("task ID: %v not found", id)
+	}
+	query := `DELETE FROM tasks WHERE id=$1`
+	_, err = DB.Exec(query, id)
+	if err != nil {
+		return err
+	}
+	log.Printf("Task %v deleted successfully", id)
+	return nil
+}
+
+func UpdateTask(id int, updates map[string]interface{}) error {
+	if exists, _ := TaskExists(id); !exists {
+		return fmt.Errorf("task ID %v was not found", id)
+	}
+	setClause := ""
+	args := []interface{}{} // init empty slice
+
+	i := 1
+	for key, val := range updates {
+		if setClause != "" {
+			setClause += ", "
+		}
+		setClause += fmt.Sprintf("%s = $%d", key, i)
+		args = append(args, val)
+		i++
+	}
+
+	args = append(args, id)
+	query := fmt.Sprintf(`UPDATE tasks SET %s WHERE id =$%d`, setClause, i)
+	_, err := DB.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}

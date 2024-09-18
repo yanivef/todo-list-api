@@ -5,9 +5,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"task-manager-api/db"
 	task "task-manager-api/models"
 	"time"
+
+	"github.com/gorilla/mux"
 )
 
 func HandelTasks(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +24,7 @@ func HandelTasks(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// POST
+// function to create task
 func CreateTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
@@ -57,35 +60,8 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Task ID is taken", http.StatusBadRequest)
 		return
 	}
-	// PARSE THE TIME FROM STRING
-	// var created_at time.Time
-	// var updated_at time.Time
 
-	// if data["created_at"] != nil {
-	// 	created_at, err = time.Parse(time.RFC3339, data["created_at"].(string))
-	// 	if err != nil {
-	// 		http.Error(w, "Invalid created_at format", http.StatusBadRequest)
-	// 		return
-	// 	}
-	// } else {
-	// 	created_at = time.Now()
-	// }
-	// if data["updated_at"] != nil {
-	// 	updated_at, err = time.Parse(time.RFC3339, data["updated_at"].(string))
-	// 	if err != nil {
-	// 		http.Error(w, "Invalid updated_at format", http.StatusBadRequest)
-	// 		return
-	// 	}
-	// } else {
-	// 	updated_at = time.Now()
-	// }
-
-	// CHECK updated_at value is after or equal -> created_at
-	// if t := updated_at.Before(created_at); t {
-	// 	http.Error(w, "Invalid updated_at value (DATE CANT BE BEFORE created_at VALUE)", http.StatusBadRequest)
-	// 	return
-	// }
-
+	// create new task with the given details, set created_at, update_at to current time as default creation
 	new_task := task.Task{
 		ID:        int(id),
 		Name:      name,
@@ -93,7 +69,9 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
+
 	log.Printf("POST request to create task: %v", new_task)
+
 	// adding new task to DB
 	err = db.InsertTask(new_task)
 	if err != nil {
@@ -105,13 +83,88 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 }
 
 // PUT
-func UpdateTask(w http.ResponseWriter, r *http.Request) {
+func UpdateTaskByID(w http.ResponseWriter, r *http.Request, id int) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "Only PUT method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		http.Error(w, "Couldn't read body", http.StatusBadRequest)
+		return
+	}
+
+	var data map[string]interface{}
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		http.Error(w, "Couldn't parse json", http.StatusBadRequest)
+		return
+	}
+	if len(data) == 0 {
+		http.Error(w, "Request body cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	var updates = make(map[string]interface{})
+
+	if name, ok := data["name"].(string); ok {
+		if name != "" {
+			updates["name"] = name
+		}
+	}
+
+	if done, ok := data["done"].(bool); ok {
+		updates["done"] = done
+	}
+
+	// if created_atStr, ok := data["created_at"].(string); ok {
+	// 	created_at, err := time.Parse(time.RFC3339, created_atStr)
+	// 	if err != nil {
+	// 		http.Error(w, "Invalid created_at format", http.StatusBadRequest)
+	// 		return
+	// 	}
+	// 	updates["created_at"] = created_at
+	// }
+
+	// if updated_atStr, ok := data["updated_at"].(string); ok {
+	// 	updated_at, err := time.Parse(time.RFC3339, updated_atStr)
+	// 	if err != nil {
+	// 		http.Error(w, "Invalid updated_at format", http.StatusBadRequest)
+	// 		return
+	// 	}
+	// 	updates["updated_at"] = updated_at
+	// }
+
+	updates["updated_at"] = time.Now()
+
+	err = db.UpdateTask(id, updates)
+	if err != nil {
+		http.Error(w, "Couldn't read task: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 
 }
 
 // GET
-func GetTask(w http.ResponseWriter, r *http.Request) {
+func GetTaskByID(w http.ResponseWriter, r *http.Request, id int) {
+	var task task.Task
+	var err error
 
+	task, err = db.GetTask(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	out, err := json.Marshal(task)
+	if err != nil {
+		http.Error(w, "Couldn't parse task", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(out)
 }
 
 func GetTasks(w http.ResponseWriter, r *http.Request) {
@@ -132,11 +185,51 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(out)
 	w.WriteHeader(http.StatusOK)
+	w.Write(out)
 }
 
 // DELETE
-func DeleteTask(w http.ResponseWriter, r *http.Request) {
+func DeleteTaskByID(w http.ResponseWriter, r *http.Request, id int) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Only DELETE method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	err := db.DeleteTask(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
 
+// handle [GET, DELETE, PUT] requests by task ID
+func HandleTaskByID(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr, idOK := vars["id"]
+	if !idOK {
+		http.Error(w, "Parameter ID not found", http.StatusBadRequest)
+		return
+	}
+
+	var err error
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid task ID", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		GetTaskByID(w, r, id)
+
+	case http.MethodDelete:
+		DeleteTaskByID(w, r, id)
+	case http.MethodPut:
+		UpdateTaskByID(w, r, id)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+
+	}
 }
