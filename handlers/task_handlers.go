@@ -16,7 +16,8 @@ import (
 func HandelTasks(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		GetTasks(w, r)
+		// GetTasks(w, r)
+		handleGetTasks(w, r)
 	case http.MethodPost:
 		CreateTask(w, r)
 	default:
@@ -232,4 +233,52 @@ func HandleTaskByID(w http.ResponseWriter, r *http.Request) {
 		return
 
 	}
+}
+
+// handle get request to tasks URL, if id(one or more) provided then trigger 'GetMultipleTasksByID', otherwise, trigger 'GetTasks'
+func handleGetTasks(w http.ResponseWriter, r *http.Request) {
+	_, idOK := r.URL.Query()["id"]
+
+	if idOK {
+		GetMultipleTasksByID(w, r)
+	} else {
+		GetTasks(w, r)
+	}
+}
+
+// handles multiple tasks id requests, passing ids to 'GetMultipleTasks' function
+func GetMultipleTasksByID(w http.ResponseWriter, r *http.Request) {
+	idsStr, idOK := r.URL.Query()["id"]
+
+	if !idOK {
+		http.Error(w, "No id provided", http.StatusBadRequest)
+		return
+	}
+
+	var ids []int
+	for _, val := range idsStr {
+		id, err := strconv.Atoi(val)
+		if err != nil {
+			http.Error(w, "Invalid ID format", http.StatusBadRequest)
+			return
+		}
+		ids = append(ids, id)
+	}
+	mulTasks, err := db.GetMultipleTasks(ids)
+
+	if err != nil {
+		http.Error(w, "Error fetching task: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	out, err := json.Marshal(mulTasks)
+
+	if err != nil {
+		http.Error(w, "Failed parse tasks do json", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(out)
 }

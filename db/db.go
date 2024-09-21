@@ -1,6 +1,7 @@
 package db
 
 import (
+	"sync"
 	task "task-manager-api/models"
 
 	"database/sql"
@@ -156,4 +157,45 @@ func UpdateTask(id int, updates map[string]interface{}) error {
 	}
 	return nil
 
+}
+
+func GetMultipleTasks(ids []int) ([]task.Task, error) {
+	var wg sync.WaitGroup
+	errsChan := make(chan error, len(ids))
+	tasksChan := make(chan task.Task, len(ids))
+	tasks := make([]task.Task, 0, len(ids))
+
+	for _, id := range ids {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			task, err := GetTask(id)
+			if err != nil {
+				errsChan <- err
+				return
+			}
+			tasksChan <- task
+		}(id)
+	}
+
+	go func() {
+		wg.Wait()
+		close(tasksChan)
+		close(errsChan)
+	}()
+
+	for {
+		select {
+		case task, ok := <-tasksChan:
+			if ok {
+				tasks = append(tasks, task)
+			} else {
+				return tasks, nil
+			}
+		case err, ok := <-errsChan:
+			if ok {
+				return nil, err
+			}
+		}
+	}
 }
