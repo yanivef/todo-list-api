@@ -244,3 +244,22 @@ func CreateUser(user models.Users) error {
 	log.Printf("new user created: %s, %s", user.Username, user.Email)
 	return nil
 }
+
+func GetUserByEmail(email string) (models.Users, error) {
+	var err error
+	var user models.Users
+	query := `SELECT username, pass, email FROM users WHERE email = $1`
+
+	row := DB.QueryRow(query, email)
+
+	err = row.Scan(&user.Username, &user.Password, &user.Email)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("User email: %s not found in database", email)
+			return user, fmt.Errorf("user email: %s not found in database", email)
+		}
+		log.Printf("Database error: %s", err.Error())
+		return user, fmt.Errorf("database error: %s", err.Error())
+	}
+	return user, nil
+}

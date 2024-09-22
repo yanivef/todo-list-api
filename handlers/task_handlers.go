@@ -12,6 +12,7 @@ import (
 
 	"task-manager-api/db"
 	"task-manager-api/models"
+	"task-manager-api/utils"
 
 	"github.com/gorilla/mux"
 )
@@ -340,5 +341,65 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated) // indicate successful creation
+	w.Write(jsonRes)
+}
+
+func Login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	defer r.Body.Close()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed parse body", http.StatusBadRequest)
+		return
+	}
+
+	var cred map[string]string
+
+	err = json.Unmarshal(body, &cred)
+	if err != nil {
+		http.Error(w, "failed parse JSON", http.StatusInternalServerError)
+		return
+	}
+
+	email, emailOK := cred["email"]
+	password, passwordOK := cred["password"]
+
+	if !emailOK || !passwordOK {
+		http.Error(w, "invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	user, err := db.GetUserByEmail(email)
+	hashedPassword := user.Password
+	credOK := utils.CheckPassword(hashedPassword, password)
+
+	if err != nil || !credOK {
+		if strings.Contains(err.Error(), "not found in database") {
+			http.Error(w, "invalid email or password", http.StatusUnauthorized)
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// generate JWT token
+	token, err := utils.GenerateToken(user)
+	if err != nil {
+		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]string{"token": token}
+	jsonRes, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, "failed to create response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	w.Write(jsonRes)
 }

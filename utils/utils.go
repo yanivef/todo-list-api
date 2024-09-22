@@ -2,8 +2,12 @@ package utils
 
 import (
 	"database/sql"
+	"os"
 	"regexp"
+	"task-manager-api/models"
+	"time"
 
+	jwt "github.com/dgrijalva/jwt-go"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -35,4 +39,16 @@ func IsEmailExists(email string, DB *sql.DB) (bool, error) {
 		return false, err
 	}
 	return exists, nil
+}
+
+func GenerateToken(user models.Users) (string, error) {
+	claims := &jwt.StandardClaims{
+		// subject define who the token is for
+		Subject: user.Email,
+		// expiresAt sets the expiration time for the token (24 hours from the current time in this case)
+		ExpiresAt: time.Now().Add(time.Hour * 24).Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(os.Getenv("SECRET_KEY")))
 }
