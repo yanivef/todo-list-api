@@ -1,13 +1,15 @@
 package db
 
 import (
-	"sync"
-	task "task-manager-api/models"
-
 	"database/sql"
 	"fmt"
 	"log"
 	"os"
+	"sync"
+	"task-manager-api/models"
+	task "task-manager-api/models"
+	"task-manager-api/utils"
+	_ "task-manager-api/utils"
 
 	_ "github.com/lib/pq"
 )
@@ -198,4 +200,47 @@ func GetMultipleTasks(ids []int) ([]task.Task, error) {
 			}
 		}
 	}
+}
+
+// USER FUNC
+
+func CreateUser(user models.Users) error {
+	username, password, email := user.Username, user.Password, user.Email
+
+	if username == "" || password == "" || email == "" {
+		mockReq := `example of request:
+		{
+		"username":"name",
+		"password":"pass",
+		"email":"example@example.com"
+		}`
+
+		return fmt.Errorf("invalid request format\n%v", mockReq)
+	}
+	if !utils.IsValidEmail(email) {
+		return fmt.Errorf("invalid email format")
+	}
+
+	exists, err := utils.IsEmailExists(email, DB)
+	if err != nil {
+		return fmt.Errorf("error query db for user email")
+	}
+	if exists {
+		return fmt.Errorf("email already exists")
+	}
+
+	hashPassword, err := utils.HashPassword(password)
+	if err != nil {
+		log.Printf("failed to hash password")
+		return fmt.Errorf("failed to hash password")
+	}
+
+	query := `INSERT INTO users (username, pass, email) VALUES($1, $2, $3)`
+	_, err = DB.Exec(query, username, hashPassword, email)
+	if err != nil {
+		log.Printf("error creating user: %s", err)
+		return fmt.Errorf("error creating user: %s", err)
+	}
+	log.Printf("new user created: %s, %s", user.Username, user.Email)
+	return nil
 }

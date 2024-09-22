@@ -2,13 +2,16 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
-	"task-manager-api/db"
-	task "task-manager-api/models"
+	"strings"
 	"time"
+
+	"task-manager-api/db"
+	"task-manager-api/models"
 
 	"github.com/gorilla/mux"
 )
@@ -63,7 +66,7 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create new task with the given details, set created_at, update_at to current time as default creation
-	new_task := task.Task{
+	new_task := models.Task{
 		ID:        int(id),
 		Name:      name,
 		Done:      done,
@@ -150,7 +153,7 @@ func UpdateTaskByID(w http.ResponseWriter, r *http.Request, id int) {
 
 // GET
 func GetTaskByID(w http.ResponseWriter, r *http.Request, id int) {
-	var task task.Task
+	var task models.Task
 	var err error
 
 	task, err = db.GetTask(id)
@@ -281,4 +284,61 @@ func GetMultipleTasksByID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(out)
+}
+
+func CreateUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed parsing body", http.StatusBadRequest)
+		return
+	}
+
+	var credentials map[string]interface{}
+
+	err = json.Unmarshal(body, &credentials)
+	if err != nil {
+		http.Error(w, "Failed parsing JSON", http.StatusInternalServerError)
+		return
+	}
+
+	username, usernameOK := credentials["username"].(string)
+	password, passwordOK := credentials["password"].(string)
+	email, emailOK := credentials["email"].(string)
+	if !usernameOK || !passwordOK || !emailOK {
+		http.Error(w, "please make sure to provide: username, password, email", http.StatusBadRequest)
+		return
+	}
+
+	var user models.Users = models.Users{Username: username, Password: password, Email: email}
+
+	err = db.CreateUser(user)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid request format") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		} else if strings.Contains(err.Error(), "invalid email format") || strings.Contains(err.Error(), "email already exists") {
+			http.Error(w, err.Error(), http.StatusConflict)
+		} else {
+			http.Error(w, "internal server error: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	var response map[string]string = map[string]string{
+		"message": fmt.Sprintf("New user created: %v", user.Username),
+	}
+
+	jsonRes, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, "failed to create response", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated) // indicate successful creation
+	w.Write(jsonRes)
 }

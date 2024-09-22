@@ -12,7 +12,7 @@ func NewRouter() *mux.Router {
 
 	r.HandleFunc("/tasks", handlers.HandelTasks).Methods("GET", "POST")
 	r.HandleFunc("/tasks/{id:[0-9]+}", handlers.HandleTaskByID).Methods("GET", "DELETE", "PUT")
-
+	r.HandleFunc("/users", handlers.CreateUser).Methods("POST")
 	return r
 
 }
