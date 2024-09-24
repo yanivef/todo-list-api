@@ -47,21 +47,21 @@ func Close() error {
 }
 
 // check if tasks exists in the database
-func TaskExists(id int) (bool, error) {
+func TaskExists(id int, userEmail string) (bool, error) {
 	var exists bool
-	query := `SELECT EXISTS(SELECT 1 FROM tasks WHERE id=$1)` // $1 is a placeholder
-	err := DB.QueryRow(query, id).Scan(&exists)
+	query := `SELECT EXISTS(SELECT 1 FROM tasks WHERE task_id = $1 AND owner_email = $2)`
+	err := DB.QueryRow(query, id, userEmail).Scan(&exists)
 	return exists, err
 }
 
 // insert new task to the database
 func InsertTask(task task.Task) error {
 	var err error
-	id, name, done := task.ID, task.Name, task.Done
+	name, desc, status, ownerEmail := task.Name, task.Description, task.Status, task.OwnerEmail
 
-	query := `INSERT INTO tasks (id, name, done) VALUES($1, $2, $3)`
+	query := `INSERT INTO tasks (name, description, status, owner_email) VALUES($1, $2, $3, $4)`
 
-	_, err = DB.Exec(query, id, name, done)
+	_, err = DB.Exec(query, name, desc, status, ownerEmail)
 	if err != nil {
 		log.Printf("Error inserting task: %s", err)
 		return err
@@ -73,12 +73,12 @@ func InsertTask(task task.Task) error {
 }
 
 // gets all tasks from database
-func GetAllTasks() ([]task.Task, error) {
+func GetAllTasks(userEmail string) ([]task.Task, error) {
 	var err error
 	var tasks []task.Task
-	query := `SELECT id, name, done, created_at, updated_at FROM tasks`
+	query := `SELECT task_id, name, description, status, created_at, updated_at FROM tasks WHERE owner_email = $1`
 
-	rows, err := DB.Query(query)
+	rows, err := DB.Query(query, userEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func GetAllTasks() ([]task.Task, error) {
 
 	for rows.Next() {
 		var t task.Task
-		err = rows.Scan(&t.ID, &t.Name, &t.Done, &t.CreatedAt, &t.UpdatedAt)
+		err = rows.Scan(&t.ID, &t.Name, &t.Description, &t.Status, &t.CreatedAt, &t.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -96,18 +96,18 @@ func GetAllTasks() ([]task.Task, error) {
 }
 
 // get task from database by given ID
-func GetTask(id int) (task.Task, error) {
+func GetTask(id int, userEmail string) (task.Task, error) {
 	var err error
 	var task task.Task
-	query := `SELECT id, name, done, created_at, updated_at FROM tasks WHERE id = $1`
+	query := `SELECT task_id, name, description, status, created_at, updated_at FROM tasks WHERE task_id = $1 AND owner_email = $2`
 
-	row := DB.QueryRow(query, id)
+	row := DB.QueryRow(query, id, userEmail)
 
-	err = row.Scan(&task.ID, &task.Name, &task.Done, &task.CreatedAt, &task.UpdatedAt)
+	err = row.Scan(&task.ID, &task.Name, &task.Description, &task.Status, &task.CreatedAt, &task.UpdatedAt)
 	if err != nil {
 		// check if the error suggests that no row was found with the given ID
 		if err == sql.ErrNoRows {
-			return task, fmt.Errorf("task with ID %d was not found", id)
+			return task, fmt.Errorf("task with ID: %d was not found", id)
 		}
 		return task, err
 	}
@@ -116,29 +116,30 @@ func GetTask(id int) (task.Task, error) {
 
 }
 
-func DeleteTask(id int) error {
-	var err error
-	exists, err := TaskExists(id)
+func DeleteTask(id int, userEmail string) error {
+	exists, err := TaskExists(id, userEmail)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return fmt.Errorf("task ID: %v not found", id)
 	}
-	query := `DELETE FROM tasks WHERE id=$1`
+
+	query := `DELETE FROM tasks WHERE task_id=$1`
 	_, err = DB.Exec(query, id)
 	if err != nil {
 		return err
 	}
 	log.Printf("Task %v deleted successfully", id)
 	return nil
+
 }
 
-func UpdateTask(id int, updates map[string]interface{}) error {
-	if exists, _ := TaskExists(id); !exists {
+func UpdateTask(id int, userEmail string, updates map[string]interface{}) error {
+	if exists, _ := TaskExists(id, userEmail); !exists {
 		return fmt.Errorf("task ID %v was not found", id)
 	}
-	setClause := ""
+	setClause := ""         // will be the executed query parameters
 	args := []interface{}{} // init empty slice
 
 	i := 1
@@ -152,7 +153,7 @@ func UpdateTask(id int, updates map[string]interface{}) error {
 	}
 
 	args = append(args, id)
-	query := fmt.Sprintf(`UPDATE tasks SET %s WHERE id =$%d`, setClause, i)
+	query := fmt.Sprintf(`UPDATE tasks SET %s WHERE task_id = $%d`, setClause, i)
 	_, err := DB.Exec(query, args...)
 	if err != nil {
 		return err
@@ -161,17 +162,17 @@ func UpdateTask(id int, updates map[string]interface{}) error {
 
 }
 
-func GetMultipleTasks(ids []int) ([]task.Task, error) {
+func GetMultipleTasks(taskIds []int, userEmail string) ([]task.Task, error) {
 	var wg sync.WaitGroup
-	errsChan := make(chan error, len(ids))
-	tasksChan := make(chan task.Task, len(ids))
-	tasks := make([]task.Task, 0, len(ids))
+	errsChan := make(chan error, len(taskIds))      // channel to handle errors
+	tasksChan := make(chan task.Task, len(taskIds)) // channel to handle tasks
+	tasks := make([]task.Task, 0, len(taskIds))     // return tasks
 
-	for _, id := range ids {
+	for _, id := range taskIds {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			task, err := GetTask(id)
+			task, err := GetTask(id, userEmail)
 			if err != nil {
 				errsChan <- err
 				return

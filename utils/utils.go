@@ -1,15 +1,26 @@
 package utils
 
 import (
+	"context"
 	"database/sql"
+	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"task-manager-api/models"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	"golang.org/x/crypto/bcrypt"
 )
+
+type CustomClaims struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	jwt.StandardClaims
+}
+
+var JWT_SECRET string = os.Getenv("SECRET_KEY")
 
 func HashPassword(password string) (string, error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -42,13 +53,44 @@ func IsEmailExists(email string, DB *sql.DB) (bool, error) {
 }
 
 func GenerateToken(user models.Users) (string, error) {
-	claims := &jwt.StandardClaims{
-		// subject define who the token is for
-		Subject: user.Email,
-		// expiresAt sets the expiration time for the token (24 hours from the current time in this case)
-		ExpiresAt: time.Now().Add(time.Hour * 24).Unix(),
+	claims := &CustomClaims{
+		Email:    user.Email,
+		Username: user.Username,
+		StandardClaims: jwt.StandardClaims{
+			Subject:   user.Email,
+			ExpiresAt: time.Now().Add(time.Hour * 24).Unix(),
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(os.Getenv("SECRET_KEY")))
+	return token.SignedString([]byte(JWT_SECRET))
+
+}
+
+func JWTAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get the token from the Authorization header
+		tokenStr := r.Header.Get("Authorization")
+		if tokenStr == "" {
+			http.Error(w, "Authorization header is required", http.StatusUnauthorized)
+			return
+		}
+
+		// Remove "Bearer " from the token string if it's included
+		tokenStr = strings.TrimPrefix(tokenStr, "Bearer ")
+
+		claims := &CustomClaims{}
+		_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+			return []byte(JWT_SECRET), nil
+		})
+
+		if err != nil {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Set claims in context
+		ctx := context.WithValue(r.Context(), "claims", claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
